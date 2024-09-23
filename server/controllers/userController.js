@@ -1,8 +1,10 @@
+/////////////////////////////// Imports /////////////////////////////////////////
 import User from "../models/user.js";
 import { registerSchema, loginSchema } from "../validation/schemas.js";
 import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
 
-// ////////////////////////////////// Register a new user //////////////////////////////////
+///////////////////////// Register User ////////////////////////////////////////
 const registerUser = async (req, res) => {
   const { error } = registerSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
@@ -14,9 +16,7 @@ const registerUser = async (req, res) => {
     return res.status(400).json({ message: "User already exists" });
   }
 
-  const saltRounds = 10;
-  const hashedPassword = await bcrypt.hash(password, saltRounds);
-
+  const hashedPassword = await bcrypt.hash(password, 10);
   const newUser = new User({ name, email, password: hashedPassword });
 
   try {
@@ -30,13 +30,12 @@ const registerUser = async (req, res) => {
   }
 };
 
-// /////////////////////////////////// Login user //////////////////////////////////////
+/////////////////////////// Login User /////////////////////////////////////////
 const loginUser = async (req, res) => {
   const { error } = loginSchema.validate(req.body);
   if (error) return res.status(400).json({ message: error.details[0].message });
 
-  const { email, password } = req.body;
-
+  const { email, password } = req.body; //destructuring from req.body
   const user = await User.findOne({ email });
 
   if (!user) {
@@ -44,10 +43,18 @@ const loginUser = async (req, res) => {
   }
 
   const isMatch = await bcrypt.compare(password, user.password);
-
   if (!isMatch) {
     return res.status(400).json({ message: "Invalid credentials" });
   }
+  //here  we are using JWT (JSON web token) here
+  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+    expiresIn: "1h",
+  });
+  //using cookies to store JWT token
+  res.cookie("token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
 
   res.status(200).json({
     message: "Login successful",
@@ -55,11 +62,22 @@ const loginUser = async (req, res) => {
   });
 };
 
-// ////////////////////////// Logout user //////////////////////////////////
+/////////////////////////////// LogOut User /////////////////////////////////////////////////
 const logoutUser = (req, res) => {
   res.clearCookie("token");
   res.status(200).json({ message: "Logged out successfully" });
 };
 
-// Export functions at the end
-export { registerUser, loginUser, logoutUser };
+/////////////////////////// Check Authenticatin ////////////////////////////////////////////
+const checkAuth = (req, res) => {
+  const token = req.cookies.token;
+  if (!token) return res.status(401).json({ message: "Unauthorized" });
+
+  jwt.verify(token, process.env.JWT_SECRET, (err) => {
+    if (err) return res.status(403).json({ message: "Invalid token" });
+    res.status(200).json({ message: "Authentication is working." });
+  });
+};
+
+///////////////////////////// export //////////////////////////////////////////////////
+export { registerUser, loginUser, logoutUser, checkAuth };
